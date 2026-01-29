@@ -29,7 +29,20 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Check if this appears to be a fresh Kali installation
+if [ ! -f /etc/kali-version ]; then
+    print_warning "This does not appear to be a Kali Linux system"
+    read -p "Continue anyway? (y/n): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
 print_status "Starting Kali Linux hardening process..."
+print_warning "This script will make significant changes to your system!"
+print_warning "Ensure you have console access in case SSH configuration fails"
+read -p "Press Enter to continue or Ctrl+C to cancel..." 
 
 # 1. Update and upgrade the system
 print_status "Updating and upgrading system packages"
@@ -104,6 +117,22 @@ print_success "Fail2Ban configured and enabled"
 # 5. Secure SSH configuration
 print_status "Securing SSH configuration"
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+
+# Check if SSH keys exist for current user, generate if not
+if [ ! -f ~/.ssh/id_rsa ]; then
+    print_warning "Generating SSH keys for current user..."
+    ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N "" -C "kali-hardening-$(date +%Y%m%d)"
+    ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -C "kali-hardening-$(date +%Y%m%d)"
+    
+    # Add public key to authorized_keys
+    cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+    cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+    chmod 600 ~/.ssh/authorized_keys
+    
+    print_success "SSH keys generated and added to authorized_keys"
+    print_warning "IMPORTANT: Copy your private keys to a safe location!"
+    print_warning "Private keys are in: ~/.ssh/id_rsa and ~/.ssh/id_ed25519"
+fi
 
 # Backup original and create new config
 cat > /etc/ssh/sshd_config << 'EOF'
@@ -395,11 +424,16 @@ print_success "Final cleanup completed"
 print_status "Hardening complete!"
 print_warning "Important recommendations:"
 echo "1. Change the default 'kali' user password"
-echo "2. Set up SSH keys for authentication"
-echo "3. Consider changing SSH port from default 22"
+echo "2. BACKUP YOUR SSH PRIVATE KEYS immediately!"
+echo "   They are located in: ~/.ssh/id_rsa and ~/.ssh/id_ed25519"
+echo "3. Consider changing SSH port from default 22 (edit /etc/ssh/sshd_config)"
 echo "4. Regularly update your system with 'apt update && apt upgrade'"
 echo "5. Monitor logs regularly: /var/log/auth.log, /var/log/syslog"
-echo "6. Run security scans periodically with lynis, rkhunter, and chkrootkit"
-echo "7. Consider additional hardening based on your specific use case"
+echo "6. Run security scans periodically:"
+echo "   - lynis audit system"
+echo "   - rkhunter --check"
+echo "   - chkrootkit"
+echo "7. Test SSH access from another terminal before closing this session"
 
 print_success "Kali Linux hardening script completed successfully!"
+print_warning "REMEMBER: You can only log in via SSH keys now - password authentication is disabled!"
